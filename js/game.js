@@ -17,8 +17,13 @@ const Game = (() => {
   const D2R = Math.PI / 180;
 
   /* ---------- 版本记录（每次更新：改 VERSION + VERSIONS + CHANGELOG.md） ---------- */
-  const VERSION = 'v3.2';
+  const VERSION = 'v3.3';
   const VERSIONS = [
+    { v: 'v3.3', date: '2026-09-19', title: '击退', items: [
+      '新增 击退效果：打得越重对手被推得越靠右，随后滑步退回原位',
+      '新增 被击退时脚下擦出灰尘，K.O. 时被轰飞得更远',
+      '优化 伤害数字/拟声词/眩晕星星跟随击退位移',
+    ]},
     { v: 'v3.2', date: '2026-09-19', title: '铁拳回应', items: [
       '新增 连击里程碑：每 25 连击对手破防硬直 1 秒，期间伤害翻倍',
       '新增 键位方案切换：方位键 U I / J K ↔ 左右手 F J / D K，大厅可选',
@@ -98,20 +103,23 @@ const Game = (() => {
     x: 790, y: 570, hp: 2600, maxHp: 2600,
     dent: 0, hurtT: 0, stagger: 0, ko: false, respawnT: 0, gen: 1, lastTaunt: 0,
     reset() { Object.assign(this, { hp: 2600, maxHp: 2600, dent: 0, hurtT: 0, stagger: 0,
-      ko: false, respawnT: 0, gen: 1, lastTaunt: 0 }); },
+      ko: false, respawnT: 0, gen: 1, lastTaunt: 0, knock: 0 }); },
     hit(power) {
       if (this.ko) return;
       if (this.stagger > 0) power *= 2;          // 破防硬直：伤害翻倍
       this.hp = Math.max(0, this.hp - power);
       this.dent = Math.min(1, this.dent + power * 0.0004);
       this.hurtT = 0.18;
-      dmg(this.x + 110, this.y - 320, Math.round(power));
+      // 击退：打得越重被推得越远（分数越高越靠右），随后滑步退回
+      this.knock = Math.min(200, this.knock + power * 0.55);
+      dmg(this.x + 110 + this.knock, this.y - 320, Math.round(power));
       if (this.stagger <= 0) FoeRig.act('hurt');
       if (this.hp <= 0) {           // 击倒对手，下一回合换更硬的
         this.ko = true; this.respawnT = 1.6; this.stagger = 0;
+        this.knock = Math.min(260, this.knock + 130);   // 倒地时被轰飞
         S.score += 1000 * this.gen;
-        comicWord(this.x + 90, this.y - 180, false);
-        burst(this.x + 100, this.y - 260, 36, 1.5, palette().accent);
+        comicWord(this.x + 90 + this.knock, this.y - 180, false);
+        burst(this.x + 100 + this.knock, this.y - 260, 36, 1.5, palette().accent);
         crowdCheer();
         AudioSys.sfxKO();
         S.slowmo = Math.max(S.slowmo, 0.5);
@@ -549,9 +557,15 @@ const Game = (() => {
       if (!g.done && g.x < L.x - 100) { g.done = true; g.missed = true; S.combo = 0; S.fc = false; }
     }
 
-    // 对手：受击表现 / 破防倒计时 / 挑衅还拳 / K.O. 后换人
+    // 对手：受击表现 / 击退滑步回位 / 破防倒计时 / 挑衅还拳 / K.O. 后换人
     foe.hurtT = Math.max(0, foe.hurtT - dt);
     foe.stagger = Math.max(0, foe.stagger - dt);
+    foe.knock += (0 - foe.knock) * Math.min(1, dt * 1.5);   // 滑步退回原位
+    if (foe.knock > 18 && Math.random() < 0.5) {            // 被打退时脚下擦出灰尘
+      particles.push({ x: FOE_PLACE.x + foe.knock + rand(-40, 40), y: 700,
+        vx: rand(-20, 60), vy: rand(-70, -20), rot: 0, vr: 0,
+        w: 5, h: 4, life: 0.45, t: 0, color: 'rgba(220,230,225,0.5)' });
+    }
     const tauntBar = Math.floor(beat / 4);
     if (foe.lastTaunt !== tauntBar && beat > 8 && !foe.ko && foe.stagger <= 0) {
       foe.lastTaunt = tauntBar;
@@ -877,15 +891,16 @@ const Game = (() => {
 
   /* ---------- 对手拳手 ---------- */
   function drawFoe() {
-    // 地面阴影
+    const fx = FOE_PLACE.x + foe.knock;   // 击退位移：打得越重越靠右
+    // 地面阴影（随击退位移）
     ctx.fillStyle = 'rgba(6,20,24,0.3)';
     ctx.beginPath();
-    ctx.ellipse(FOE_PLACE.x + 150, 702, 200, 18, 0, 0, 7);
+    ctx.ellipse(fx + 150, 702, 200, 18, 0, 0, 7);
     ctx.fill();
     // 景深调色：对手整体略暗略灰，和近景主角拉开层次
     const dim = ctx.filter !== undefined;
     if (dim) ctx.filter = 'brightness(0.87) saturate(0.92)';
-    FoeRig.draw(ctx, S.t, FOE_PLACE);
+    FoeRig.draw(ctx, S.t, { x: fx, y: FOE_PLACE.y, s: FOE_PLACE.s });
     ctx.filter = 'none';
     // 被打晕的小星星 + 破防提示
     if (foe.stagger > 0) {
@@ -902,8 +917,8 @@ const Game = (() => {
     } else if (foe.dent > 0.25 && !foe.ko) {
       ctx.save();
       ctx.globalAlpha = 0.5 + 0.5 * Math.sin(S.t * 8);
-      star(ctx, FOE_PLACE.x + 120, 175 + Math.sin(S.t * 3) * 5, 5, 10, 4, '#f4ead6');
-      star(ctx, FOE_PLACE.x + 210, 160 + Math.cos(S.t * 2.6) * 4, 5, 7, 3, '#f4ead6');
+      star(ctx, fx + 120, 175 + Math.sin(S.t * 3) * 5, 5, 10, 4, '#f4ead6');
+      star(ctx, fx + 210, 160 + Math.cos(S.t * 2.6) * 4, 5, 7, 3, '#f4ead6');
       ctx.restore();
       ctx.globalAlpha = 1;
     }
