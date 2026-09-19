@@ -16,9 +16,33 @@ const Game = (() => {
   const pick = a => a[Math.floor(Math.random() * a.length)];
   const D2R = Math.PI / 180;
 
+  /* ---------- 版本记录（每次更新：改 VERSION + VERSIONS + CHANGELOG.md） ---------- */
+  const VERSION = 'v3.2';
+  const VERSIONS = [
+    { v: 'v3.2', date: '2026-09-19', title: '铁拳回应', items: [
+      '新增 连击里程碑：每 25 连击对手破防硬直 1 秒，期间伤害翻倍',
+      '新增 键位方案切换：方位键 U I / J K ↔ 左右手 F J / D K，大厅可选',
+      '新增 游戏内版本记录面板 + CHANGELOG.md',
+      '新增 移动端竖屏横屏提示',
+      '调整 谱面车道全面语义化，键位与玩法数据解耦',
+    ]},
+    { v: 'v3.1', date: '2026-09-19', title: '蓝拳对手', items: [
+      '沙袋下岗：镜像换色的蓝方纸片拳手登场',
+      '对手会压步逼近、还拳挑衅，被击倒后换更硬的下一阵',
+      '出拳加前冲上步，拳峰实打实砸在对手身上',
+      '肩甲烘焙进躯干，出拳不再散架',
+    ]},
+    { v: 'v3.0', date: '2026-09-19', title: '纸片拳王', items: [
+      '首个完整版本：拼贴主角切件绑定 2D 骨骼',
+      '侧视拳台四路出拳玩法（刺/直/勾/上勾）',
+      '打击感全家桶：顿帧/震屏/纸屑/冲击星/速度线/拟声词/慢镜头 KO',
+      '三首 Web Audio 程序化原创配乐 + 大厅选曲/难度/存档',
+    ]},
+  ];
+
   /* ---------- 存档 ---------- */
   const SAVE_KEY = 'boxerdash_v3';
-  let save = { best: {}, offset: 0, muted: false };
+  let save = { best: {}, offset: 0, muted: false, scheme: 'grid' };
   try { Object.assign(save, JSON.parse(localStorage.getItem(SAVE_KEY) || '{}')); } catch (e) {}
   const persist = () => { try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch (e) {} };
 
@@ -63,8 +87,8 @@ const Game = (() => {
       particles.push({ line: true, x: x + rand(10, 60), y: y + rand(-26, 26),
         vx: rand(700, 1300), vy: rand(-30, 30), len: rand(40, 120), life: 0.22, t: 0 });
   }
-  function comicWord(x, y, big) {
-    words.push({ text: big ? 'K.O.!!' : pick(COMICS), x, y, t: 0, dur: big ? 1.4 : 0.55,
+  function comicWord(x, y, big, text) {
+    words.push({ text: text || (big ? 'K.O.!!' : pick(COMICS)), x, y, t: 0, dur: big ? 1.4 : 0.55,
       rot: rand(-14, 14), big: !!big, s: 0 });
   }
   function dmg(x, y, v) { dmgNums.push({ x, y, v, t: 0, dur: 0.7 }); }
@@ -72,18 +96,19 @@ const Game = (() => {
   /* ---------- 对手（蓝方拳手） ---------- */
   const foe = {
     x: 790, y: 570, hp: 2600, maxHp: 2600,
-    dent: 0, hurtT: 0, ko: false, respawnT: 0, gen: 1, lastTaunt: 0,
-    reset() { Object.assign(this, { hp: 2600, maxHp: 2600, dent: 0, hurtT: 0,
+    dent: 0, hurtT: 0, stagger: 0, ko: false, respawnT: 0, gen: 1, lastTaunt: 0,
+    reset() { Object.assign(this, { hp: 2600, maxHp: 2600, dent: 0, hurtT: 0, stagger: 0,
       ko: false, respawnT: 0, gen: 1, lastTaunt: 0 }); },
     hit(power) {
       if (this.ko) return;
+      if (this.stagger > 0) power *= 2;          // 破防硬直：伤害翻倍
       this.hp = Math.max(0, this.hp - power);
       this.dent = Math.min(1, this.dent + power * 0.0004);
       this.hurtT = 0.18;
-      FoeRig.act('hurt');
       dmg(this.x + 110, this.y - 320, Math.round(power));
+      if (this.stagger <= 0) FoeRig.act('hurt');
       if (this.hp <= 0) {           // 击倒对手，下一回合换更硬的
-        this.ko = true; this.respawnT = 1.6;
+        this.ko = true; this.respawnT = 1.6; this.stagger = 0;
         S.score += 1000 * this.gen;
         comicWord(this.x + 90, this.y - 180, false);
         burst(this.x + 100, this.y - 260, 36, 1.5, palette().accent);
@@ -94,13 +119,18 @@ const Game = (() => {
     },
   };
 
-  /* ---------- 车道（拳皇式 2×2：上排高位 U/I，下排低位 J/K；左列左手右列右手） ---------- */
+  /* ---------- 车道（拳法 ID 与谱面对应；键位随方案动态映射） ---------- */
   const LANES = [
-    { key: 'U', act: 'jab',   hand: 'L', label: 'U', name: '刺拳·高位', mult: 1.0,  x: 0, y: 0 },
-    { key: 'I', act: 'cross', hand: 'R', label: 'I', name: '直拳·高位', mult: 1.2,  x: 0, y: 0 },
-    { key: 'J', act: 'hook',  hand: 'L', label: 'J', name: '勾拳·低位', mult: 1.45, x: 0, y: 0 },
-    { key: 'K', act: 'upper', hand: 'R', label: 'K', name: '上勾·低位', mult: 1.6,  x: 0, y: 0 },
+    { id: 'jab',   act: 'jab',   hand: 'L', name: '刺拳·高位', mult: 1.0,  key: '', label: '', x: 0, y: 0 },
+    { id: 'cross', act: 'cross', hand: 'R', name: '直拳·高位', mult: 1.2,  key: '', label: '', x: 0, y: 0 },
+    { id: 'hook',  act: 'hook',  hand: 'L', name: '勾拳·低位', mult: 1.45, key: '', label: '', x: 0, y: 0 },
+    { id: 'upper', act: 'upper', hand: 'R', name: '上勾·低位', mult: 1.6,  key: '', label: '', x: 0, y: 0 },
   ];
+  /* 键位方案：grid = 2×2 方位（上排高位下排低位）；hands = 左右手分列 */
+  const SCHEMES = {
+    grid:  { label: '方位键 U I / J K', map: { jab: 'U', cross: 'I', hook: 'J', upper: 'K' } },
+    hands: { label: '左右手 F J / D K', map: { jab: 'F', cross: 'J', hook: 'D', upper: 'K' } },
+  };
   const PLACE = { x: 250, y: 570, s: 0.36 };
   const FOE_PLACE = { x: 790, y: 570, s: 0.36 };
   const FoeRig = createRig({
@@ -126,7 +156,7 @@ const Game = (() => {
     const spb = S.chart.spb;
     let best = null, bestDt = 1e9;
     for (const n of S.notes) {
-      if (n.lane !== L.key || n.done) continue;
+      if (n.lane !== L.id || n.done) continue;
       const dt = (n.beat - now) * spb;          // 判定统一用秒
       if (Math.abs(dt) < Math.abs(bestDt)) { best = n; bestDt = dt; }
     }
@@ -137,7 +167,7 @@ const Game = (() => {
     landPunch(L, q, best.beat);
     // 顺带吃掉同车道附近的金拳套
     for (const g of S.gloves) {
-      if (!g.done && g.lane === L.key && Math.abs(g.beat - now) < 0.3) {
+      if (!g.done && g.lane === L.id && Math.abs(g.beat - now) < 0.3) {
         g.done = true;
         S.score += 500;
         S.feverGauge = clamp(S.feverGauge + 6, 0, 100);
@@ -165,6 +195,13 @@ const Game = (() => {
     S.feverGauge = clamp(S.feverGauge + (perfect ? 5 : q === 'GREAT' ? 3.4 : 2), 0, 100);
     if (S.combo > 0 && S.combo % 50 === 0) {
       S.hp = clamp(S.hp + 6, 0, 100);
+      crowdCheer();
+    }
+    // 连击里程碑：每 25 连击对手破防硬直 1 秒，伤害翻倍
+    if (S.combo > 0 && S.combo % 25 === 0 && !foe.ko && foe.stagger <= 0) {
+      foe.stagger = 1.05;
+      FoeRig.act('stagger');
+      comicWord(FOE_PLACE.x + 120, FOE_PLACE.y - 330, false, '破防!');
       crowdCheer();
     }
 
@@ -210,7 +247,7 @@ const Game = (() => {
     const now = songBeat();
     let target = null;
     for (const n of S.notes) {
-      if (n.lane !== L.key || n.done || n.kind !== 'hold') continue;
+      if (n.lane !== L.id || n.done || n.kind !== 'hold') continue;
       if (Math.abs(n.beat - now) < 0.35) { target = n; break; }
     }
     if (!target) { judgeHit(L); return; }
@@ -257,10 +294,17 @@ const Game = (() => {
     }
   }
 
-  /* ---------- 输入（2×2 空间对应：U/I 高位 J/K 低位，左列左手右列右手） ---------- */
+  /* ---------- 输入（键位随方案动态映射；方向键=轨道顺序） ---------- */
   const inputDown = {};
-  const KEYMAP = { u: 'U', i: 'I', j: 'J', k: 'K',
-    arrowleft: 'U', arrowup: 'I', arrowdown: 'J', arrowright: 'K' };
+  let KEYMAP = {};
+  function applyScheme() {
+    const s = SCHEMES[save.scheme] || SCHEMES.grid;
+    for (const L of LANES) { L.key = s.map[L.id]; L.label = L.key; }
+    KEYMAP = {};
+    for (const L of LANES) KEYMAP[L.key.toLowerCase()] = L.key;
+    KEYMAP.arrowup = LANES[0].key; KEYMAP.arrowright = LANES[1].key;
+    KEYMAP.arrowdown = LANES[2].key; KEYMAP.arrowleft = LANES[3].key;
+  }
   function pressLane(key) {
     if (S.scene !== 'play' || S.koT >= 0) return;
     inputDown[key] = true;
@@ -269,7 +313,7 @@ const Game = (() => {
   }
   function judgeOrHold(L) {
     const now = songBeat();
-    const hold = S.notes.find(n => !n.done && n.kind === 'hold' && n.lane === L.key
+    const hold = S.notes.find(n => !n.done && n.kind === 'hold' && n.lane === L.id
       && Math.abs(n.beat - now) < 0.35);
     if (hold && !holdState.lane) holdStart(L);
     else judgeHit(L);
@@ -286,18 +330,18 @@ const Game = (() => {
     const k = e.key.toLowerCase();
     if (KEYMAP[k]) releaseLane(KEYMAP[k]);
   });
-  // 触屏：左右半屏 × 上下半区
+  // 触屏：左右半屏 × 上下半区（随键位方案映射到对应车道）
   cv.addEventListener('touchstart', e => {
     for (const t of e.changedTouches) {
       const r = cv.getBoundingClientRect();
       const x = (t.clientX - r.left) / r.width * W, y = (t.clientY - r.top) / r.height * H;
-      const key = x > 640 ? (y < 360 ? 'I' : 'K') : (y < 360 ? 'U' : 'J');
-      pressLane(key);
+      const L = LANES[x > 640 ? (y < 360 ? 1 : 3) : (y < 360 ? 0 : 2)];
+      pressLane(L.key);
     }
     e.preventDefault();
   }, { passive: false });
-  cv.addEventListener('touchend', e => {
-    for (const k of ['F', 'J', 'D', 'K']) releaseLane(k);
+  cv.addEventListener('touchend', () => {
+    for (const L of LANES) releaseLane(L.key);
   });
 
   /* ---------- 节拍时间 ---------- */
@@ -456,14 +500,14 @@ const Game = (() => {
         if (n.done || n.kind === 'hold') continue;
         if (Math.abs(n.beat - beat) < 0.06) {
           n.done = true;
-          const L = LANES.find(l => l.key === n.lane);
+          const L = LANES.find(l => l.id === n.lane);
           landPunch(L, 'PERFECT', n.beat);
         }
       }
       for (const g of S.gloves) {
         if (!g.done && Math.abs(g.beat - beat) < 0.06) {
           g.done = true;
-          const L = LANES.find(l => l.key === g.lane);
+          const L = LANES.find(l => l.id === g.lane);
           S.score += 500; AudioSys.sfxGlove(); burst(L.x, L.y, 14, 1, '#f2b632');
         }
       }
@@ -475,7 +519,7 @@ const Game = (() => {
     } else {
       for (const L of LANES) {
         if (!inputDown[L.key]) continue;
-        const n = S.notes.find(x => !x.done && x.kind === 'hold' && x.lane === L.key
+        const n = S.notes.find(x => !x.done && x.kind === 'hold' && x.lane === L.id
           && beat - x.beat > -0.15 && beat < x.beat + x.dur);
         if (n) { holdStart(L); break; }
       }
@@ -484,7 +528,7 @@ const Game = (() => {
     // 音符推进 + 漏判
     const sp = S.chart.speed;
     for (const n of S.notes) {
-      const L = LANES.find(l => l.key === n.lane);
+      const L = LANES.find(l => l.id === n.lane);
       const dtBeat = n.beat - beat;
       n.x = L.x + dtBeat * spb() * sp;
       n.y = L.railY;
@@ -498,17 +542,18 @@ const Game = (() => {
       }
     }
     for (const g of S.gloves) {
-      const L = LANES.find(l => l.key === g.lane);
+      const L = LANES.find(l => l.id === g.lane);
       g.x = L.x + (g.beat - beat) * spb() * sp;
       g.y = L.railY - 46;
       g.spin += dt * 160;
       if (!g.done && g.x < L.x - 100) { g.done = true; g.missed = true; S.combo = 0; S.fc = false; }
     }
 
-    // 对手：受击表现 / 挑衅还拳 / K.O. 后换人
+    // 对手：受击表现 / 破防倒计时 / 挑衅还拳 / K.O. 后换人
     foe.hurtT = Math.max(0, foe.hurtT - dt);
+    foe.stagger = Math.max(0, foe.stagger - dt);
     const tauntBar = Math.floor(beat / 4);
-    if (foe.lastTaunt !== tauntBar && beat > 8 && !foe.ko) {
+    if (foe.lastTaunt !== tauntBar && beat > 8 && !foe.ko && foe.stagger <= 0) {
       foe.lastTaunt = tauntBar;
       // 更凶：随机 1-2 连组合拳 + 时不时侧闪挑衅
       if (Math.random() < 0.45) {
@@ -770,7 +815,7 @@ const Game = (() => {
         if (n.missed) continue;
         const k = n.hitAt / 0.18;
         if (k > 1) continue;
-        const L = LANES.find(l => l.key === n.lane);
+        const L = LANES.find(l => l.id === n.lane);
         // 命中爆裂残影
         ctx.globalAlpha = 1 - k;
         ctx.fillStyle = '#f4ead6';
@@ -780,7 +825,7 @@ const Game = (() => {
       }
       if (n.missed) continue;
       if (n.x < -60 || n.x > W + 80) continue;
-      const L = LANES.find(l => l.key === n.lane);
+      const L = LANES.find(l => l.id === n.lane);
       const col = L.hand === 'L' ? '#e05548' : '#f2b632';
       if (n.kind === 'hold') {
         // 连击条
@@ -842,8 +887,19 @@ const Game = (() => {
     if (dim) ctx.filter = 'brightness(0.87) saturate(0.92)';
     FoeRig.draw(ctx, S.t, FOE_PLACE);
     ctx.filter = 'none';
-    // 被打晕的小星星
-    if (foe.dent > 0.25 && !foe.ko) {
+    // 被打晕的小星星 + 破防提示
+    if (foe.stagger > 0) {
+      ctx.fillStyle = '#f2b632';
+      ctx.font = '900 26px "Arial Black", system-ui';
+      ctx.textAlign = 'center';
+      ctx.strokeStyle = '#12333c'; ctx.lineWidth = 6;
+      ctx.strokeText('破防!', FOE_PLACE.x + 130, 150);
+      ctx.fillText('破防!', FOE_PLACE.x + 130, 150);
+      ctx.globalAlpha = 0.5 + 0.5 * Math.sin(S.t * 10);
+      star(ctx, FOE_PLACE.x + 80, 190, 5, 12, 5, '#f4ead6');
+      star(ctx, FOE_PLACE.x + 185, 205, 5, 9, 4, '#f4ead6');
+      ctx.globalAlpha = 1;
+    } else if (foe.dent > 0.25 && !foe.ko) {
       ctx.save();
       ctx.globalAlpha = 0.5 + 0.5 * Math.sin(S.t * 8);
       star(ctx, FOE_PLACE.x + 120, 175 + Math.sin(S.t * 3) * 5, 5, 10, 4, '#f4ead6');
@@ -1092,9 +1148,31 @@ const Game = (() => {
       b.classList.toggle('sel', b.dataset.d === lobbyDiff);
       b.onclick = () => { lobbyDiff = b.dataset.d; AudioSys.sfxUI(); renderLobby(); };
     });
+    document.querySelectorAll('.scheme-btn').forEach(b => {
+      b.classList.toggle('sel', b.dataset.s === save.scheme);
+      b.onclick = () => {
+        save.scheme = b.dataset.s; persist();
+        applyScheme(); AudioSys.sfxUI(); renderLobby();
+      };
+    });
     $('btn-fight').onclick = () => startSong(Chart.SONGS[lobbySong], lobbyDiff);
     $('btn-back').onclick = toTitle;
     $('mute-chk').textContent = save.muted ? '🔇 已静音 (M)' : '🔊 音效开 (M)';
+    $('lobby-ver').textContent = VERSION;
+  }
+
+  /* ---------- 版本记录面板 ---------- */
+  function renderChangelog() {
+    const wrap = $('changelog-list');
+    wrap.innerHTML = '';
+    VERSIONS.forEach((v, i) => {
+      const item = document.createElement('div');
+      item.className = 'cl-item' + (i === 0 ? ' newest' : '');
+      item.innerHTML = `
+        <div class="cl-head"><span class="cl-v">${v.v}</span><span class="cl-title">${v.title}</span><span class="cl-date">${v.date}</span></div>
+        <ul>${v.items.map(t => `<li>${t}</li>`).join('')}</ul>`;
+      wrap.appendChild(item);
+    });
   }
 
   /* ---------- 标题 ---------- */
@@ -1116,7 +1194,12 @@ const Game = (() => {
     };
     window.addEventListener('resize', fit); fit();
     makeGrain();
+    applyScheme();
     AudioSys.setMuted(save.muted);
+    document.title = `纸片拳王 PAPER FIST · BoxerDash ${VERSION}`;
+    $('ver-label').textContent = VERSION + ' · 更新记录';
+    $('btn-version').onclick = () => { renderChangelog(); show('screen-changelog'); AudioSys.sfxUI(); };
+    $('btn-changelog-close').onclick = () => show('screen-title');
     $('btn-title-start').onclick = toLobby;
     $('btn-resume').onclick = togglePause;
     $('btn-quit').onclick = () => { AudioSys.resume(); AudioSys.stopSong(); S.scene = 'lobby'; show('screen-lobby'); renderLobby(); };
@@ -1132,6 +1215,7 @@ const Game = (() => {
 
   /* 调试钩子 */
   window.__boxer = {
+    version: VERSION,
     info: () => ({ scene: S.scene, score: S.score, combo: S.combo, counts: S.counts,
       beat: S.scene === 'play' ? songBeat() : 0, hp: S.hp, lanes: LANES.map(l => [l.key, Math.round(l.x), Math.round(l.y)]) }),
     nearest: () => {
@@ -1140,6 +1224,7 @@ const Game = (() => {
     },
     state: S, rig: Rig, foeRig: FoeRig, foe,
     start: (songId, diff) => startSong(Chart.getSong(songId), diff || 'normal'),
+    toLobby, setScheme: s => { save.scheme = s; persist(); applyScheme(); },
   };
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);

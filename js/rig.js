@@ -88,6 +88,15 @@ function createRig(opts) {
       rx:[[0,0],[.06,-20,'outQuart'],[.42,0,'inOut']],
       lu:[[0,0],[.06,16,'outQuart'],[.42,0,'inOut']],
     }},
+    /* 破防硬直：连击里程碑时对手大踉跄 1 秒，期间伤害翻倍 */
+    stagger: { dur: 1.05, impact: -1, tracks: {
+      rot:[[0,0],[.22,7,'outQuart'],[.55,-6,'inOut'],[.85,4,'inOut'],[1.05,0,'inOut']],
+      head:[[0,0],[.22,-15,'outQuart'],[.6,11,'inOut'],[1.05,-4,'inOut']],
+      rx:[[0,0],[.22,-30,'outQuart'],[.65,-12,'inOut'],[1.05,0,'inOut']],
+      ry:[[0,0],[.22,16,'outQuart'],[1.05,0,'inOut']],
+      lu:[[0,0],[.22,22,'outQuart'],[1.05,4,'inOut']],
+      r:[[0,0],[.22,-20,'outQuart'],[1.05,2,'inOut']],
+    }},
     victory: { dur: 2.4, impact: -1, tracks: {
       lu:[[0,0],[.3,-168,'outBack'],[2.4,-160,'linear']],
       gl:[[0,0],[.3,-16,'outBack'],[2.4,-8,'linear']],
