@@ -17,8 +17,14 @@ const Game = (() => {
   const D2R = Math.PI / 180;
 
   /* ---------- 版本记录（每次更新：改 VERSION + VERSIONS + CHANGELOG.md） ---------- */
-  const VERSION = 'v3.3';
+  const VERSION = 'v3.4';
   const VERSIONS = [
+    { v: 'v3.4', date: '2026-09-19', title: '热血拳场', items: [
+      '新增 新曲「尘与拳 DUST & FIST」：粗粝 boom-bap + 沙哑小号 + 群众呐喊（地下拳场氛围）',
+      '新增 全场馆氛围层：人群底噪、口哨、乙烯基炒豆声',
+      '新增 热血场景：三道扫动聚光灯、观众人浪挥手、应援横幅、光柱尘埃、擂台围裙',
+      '优化 击退 v2：初速度滑行物理，滑过 100px 会趔趄，高速滑行擦出灰尘',
+    ]},
     { v: 'v3.3', date: '2026-09-19', title: '击退', items: [
       '新增 击退效果：打得越重对手被推得越靠右，随后滑步退回原位',
       '新增 被击退时脚下擦出灰尘，K.O. 时被轰飞得更远',
@@ -102,21 +108,23 @@ const Game = (() => {
   const foe = {
     x: 790, y: 570, hp: 2600, maxHp: 2600,
     dent: 0, hurtT: 0, stagger: 0, ko: false, respawnT: 0, gen: 1, lastTaunt: 0,
+    knock: 0, knockV: 0, knockPrev: 0,
     reset() { Object.assign(this, { hp: 2600, maxHp: 2600, dent: 0, hurtT: 0, stagger: 0,
-      ko: false, respawnT: 0, gen: 1, lastTaunt: 0, knock: 0 }); },
+      ko: false, respawnT: 0, gen: 1, lastTaunt: 0, knock: 0, knockV: 0, knockPrev: 0 }); },
     hit(power) {
       if (this.ko) return;
       if (this.stagger > 0) power *= 2;          // 破防硬直：伤害翻倍
       this.hp = Math.max(0, this.hp - power);
       this.dent = Math.min(1, this.dent + power * 0.0004);
       this.hurtT = 0.18;
-      // 击退：打得越重被推得越远（分数越高越靠右），随后滑步退回
-      this.knock = Math.min(200, this.knock + power * 0.55);
+      // 击退 v2：命中赋初速度，对手带着速度向后滑行（打得越重滑得越远）
+      this.knockV = Math.min(1100, this.knockV + power * 7.5);
+      this.knock = Math.min(200, this.knock + 8);
       dmg(this.x + 110 + this.knock, this.y - 320, Math.round(power));
       if (this.stagger <= 0) FoeRig.act('hurt');
       if (this.hp <= 0) {           // 击倒对手，下一回合换更硬的
         this.ko = true; this.respawnT = 1.6; this.stagger = 0;
-        this.knock = Math.min(260, this.knock + 130);   // 倒地时被轰飞
+        this.knockV = Math.min(1400, this.knockV + 650);   // 倒地时被轰飞
         S.score += 1000 * this.gen;
         comicWord(this.x + 90 + this.knock, this.y - 180, false);
         burst(this.x + 100 + this.knock, this.y - 260, 36, 1.5, palette().accent);
@@ -557,13 +565,21 @@ const Game = (() => {
       if (!g.done && g.x < L.x - 100) { g.done = true; g.missed = true; S.combo = 0; S.fc = false; }
     }
 
-    // 对手：受击表现 / 击退滑步回位 / 破防倒计时 / 挑衅还拳 / K.O. 后换人
+    // 对手：击退滑行物理 / 受击表现 / 破防倒计时 / 挑衅还拳 / K.O. 后换人
     foe.hurtT = Math.max(0, foe.hurtT - dt);
     foe.stagger = Math.max(0, foe.stagger - dt);
-    foe.knock += (0 - foe.knock) * Math.min(1, dt * 1.5);   // 滑步退回原位
-    if (foe.knock > 18 && Math.random() < 0.5) {            // 被打退时脚下擦出灰尘
-      particles.push({ x: FOE_PLACE.x + foe.knock + rand(-40, 40), y: 700,
-        vx: rand(-20, 60), vy: rand(-70, -20), rot: 0, vr: 0,
+    foe.knock += foe.knockV * dt;                              // 带速度向后滑行
+    foe.knockV *= Math.exp(-dt * 5);                           // 滑行摩擦
+    foe.knock += (0 - foe.knock) * Math.min(1, dt * 0.8);      // 缓慢踱回原位
+    foe.knock = clamp(foe.knock, -20, 220);
+    if (foe.knock > 100 && foe.knockPrev <= 100 && foe.stagger <= 0 && !foe.ko) {
+      FoeRig.act('hurt');                                      // 滑过 100px：趔趄一下
+      burst(FOE_PLACE.x + foe.knock + 90, 655, 7, 0.7, null);  // 脚下滑尘
+    }
+    foe.knockPrev = foe.knock;
+    if (foe.knockV > 150 && Math.random() < 0.5) {             // 高速滑行灰尘
+      particles.push({ x: FOE_PLACE.x + foe.knock + rand(-60, 60), y: 698,
+        vx: rand(-30, 50), vy: rand(-60, -15), rot: 0, vr: 0,
         w: 5, h: 4, life: 0.45, t: 0, color: 'rgba(220,230,225,0.5)' });
     }
     const tauntBar = Math.floor(beat / 4);
@@ -697,8 +713,12 @@ const Game = (() => {
   }
 
   /* ---------- 拳台场景 ---------- */
+  let dustMotes = null;
   function drawStage(pal) {
     const beat = songBeat();
+    const bar = Math.max(0, Math.floor(beat / 4));
+    const sec = Chart.sectionAt(bar);
+    const hot = sec === 'chorus' || sec === 'outro';   // 副歌/终盘：全场沸腾
     const pulse = 0.5 + 0.5 * Math.cos(beat * Math.PI);
     // 地板
     ctx.fillStyle = pal.floor;
@@ -712,6 +732,13 @@ const Game = (() => {
       const x = i * 190 - 80;
       ctx.beginPath(); ctx.moveTo(x, 720); ctx.lineTo(x + 240, 596); ctx.stroke();
     }
+    // 擂台围裙（印着赛事名）
+    ctx.fillStyle = pal.rope;
+    ctx.fillRect(0, 706, W, 14);
+    ctx.fillStyle = 'rgba(244,234,214,0.85)';
+    ctx.font = '900 10px "Arial Black", system-ui';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('P A P E R   F I S T · 纸 片 拳 王', W / 2, 713.5);
     // 观众席剪影（随节拍起伏）
     ctx.fillStyle = pal.crowd;
     ctx.beginPath();
@@ -721,6 +748,35 @@ const Game = (() => {
       ctx.lineTo(x, h);
     }
     ctx.lineTo(W, 610); ctx.closePath(); ctx.fill();
+    // 观众手臂：副歌全场人浪挥手，平时每隔几个举一次
+    ctx.fillStyle = pal.crowd;
+    for (let x = 18; x < W; x += 34) {
+      const i = x / 34 | 0;
+      const up = hot || i % 3 === 0;
+      if (!up) continue;
+      const sway = Math.sin(S.t * (hot ? 7 : 3.4) + i * 1.3) * (hot ? 10 : 5);
+      const h = 586 + Math.sin(x * 0.045 + Math.floor(beat * 2) * 1.7) * 7;
+      ctx.save();
+      ctx.translate(x, h + 2);
+      ctx.rotate(-1.35 + sway * 0.02);
+      ctx.fillRect(-2, -16, 4, 16);          // 手臂
+      ctx.beginPath(); ctx.arc(0, -17, 3, 0, 7); ctx.fill();  // 拳头
+      ctx.restore();
+    }
+    // 观众席横幅（纸片标语，微微摆动）
+    const banners = [['拳 王', 150], ['FIGHT!', 640], ['K.O.', 1130]];
+    banners.forEach(([txt, bx], i) => {
+      ctx.save();
+      ctx.translate(bx, 528 + Math.sin(S.t * 1.6 + i * 2) * 3);
+      ctx.rotate((i % 2 ? 1 : -1) * 0.05 + Math.sin(S.t + i) * 0.02);
+      ctx.fillStyle = i === 1 ? 'rgba(224,85,72,0.9)' : 'rgba(244,234,214,0.85)';
+      ctx.fillRect(-44, -16, 88, 32);
+      ctx.fillStyle = '#12333c';
+      ctx.font = '900 15px "Arial Black", system-ui';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(txt, 0, 1);
+      ctx.restore();
+    });
     // 人群相机闪光
     for (const f of crowdFlash) {
       const a = 1 - f.t / f.dur;
@@ -748,11 +804,12 @@ const Game = (() => {
       ctx.fillStyle = pal.ropeLight;
       ctx.fillRect(x - 9, 470, 18, 14);
     }
-    // 顶部聚光灯
-    for (const lx of [300, 900]) {
-      const sway = Math.sin(S.t * 0.7 + lx) * 40;
+    // 顶部扫动聚光灯：副歌扫得更快更亮，尘埃在光柱里飘
+    const sweepSpeed = hot ? 1.4 : 0.55, sweepAmp = hot ? 150 : 60;
+    for (const lx of [260, 640, 1020]) {
+      const sway = Math.sin(S.t * sweepSpeed + lx * 0.01) * sweepAmp;
       const grad = ctx.createLinearGradient(lx, 0, lx + sway, 560);
-      grad.addColorStop(0, `rgba(${pal.spot},0.16)`);
+      grad.addColorStop(0, `rgba(${pal.spot},${hot ? 0.2 : 0.13})`);
       grad.addColorStop(1, `rgba(${pal.spot},0)`);
       ctx.fillStyle = grad;
       ctx.beginPath();
@@ -760,9 +817,24 @@ const Game = (() => {
       ctx.lineTo(lx + sway + 130, 560); ctx.lineTo(lx + sway - 130, 560);
       ctx.closePath(); ctx.fill();
     }
+    // 光柱尘埃（悬浮微粒）
+    if (!dustMotes) {
+      dustMotes = [];
+      for (let i = 0; i < 26; i++)
+        dustMotes.push({ x: rand(0, W), y: rand(40, 560), vy: rand(4, 14), ph: rand(0, 7) });
+    }
+    ctx.fillStyle = `rgba(${pal.spot},0.35)`;
+    for (const d of dustMotes) {
+      d.y -= d.vy * S.dt; d.x += Math.sin(S.t * 0.6 + d.ph) * 8 * S.dt;
+      if (d.y < 30) { d.y = 570; d.x = rand(0, W); }
+      const a = 0.08 + 0.07 * Math.sin(S.t * 2 + d.ph);
+      ctx.globalAlpha = Math.max(0, a);
+      ctx.fillRect(d.x, d.y, 2, 2);
+    }
+    ctx.globalAlpha = 1;
     // 大海报星（背景装饰，节拍脉动）
     ctx.save();
-    ctx.translate(860, 210);
+    ctx.translate(920, 210);
     ctx.rotate(beat * 0.02);
     ctx.globalAlpha = 0.1 + pulse * 0.06;
     star(ctx, 0, 0, 5, 90 + pulse * 8, 38, pal.accent);

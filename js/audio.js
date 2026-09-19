@@ -136,6 +136,52 @@ const AudioSys = (() => {
       tone({ t, f0: f, f1: f * 0.995, dur: i === 0 ? 1.1 : 0.5, type: 'sine', vol: (i === 0 ? 0.3 : 0.12) * v, attack: 0.002 }));
     noise({ t, dur: 0.02, vol: 0.2 * v, hp: 3000 });
   };
+  // 沙哑小号（尘与拳主音）：锯齿+深低通+微降音，模拟蒙住喇叭口的旧铜管
+  const brass = (t, f, dur, v = 1) => {
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    const flt = ctx.createBiquadFilter();
+    o.type = 'sawtooth';
+    o.frequency.setValueAtTime(f * 1.02, t);              // 起音微降，像人吹出来的
+    o.frequency.exponentialRampToValueAtTime(f, t + 0.08);
+    flt.type = 'lowpass'; flt.frequency.value = 1300; flt.Q.value = 2;
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(0.11 * v, t + 0.03);
+    g.gain.setValueAtTime(0.1 * v, t + dur * 0.7);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(flt); flt.connect(g); g.connect(musicGain); g.connect(echoSend);
+    o.start(t); o.stop(t + dur + 0.06);
+  };
+  // 群众呐喊「嘿！」：带通噪声团
+  const chant = (t, v = 1) => {
+    noise({ t, dur: 0.16, vol: 0.14 * v, hp: 350, lp: 1900, dest: musicGain, attack: 0.015 });
+    tone({ t, f0: 196, f1: 175, dur: 0.14, type: 'sawtooth', vol: 0.045 * v, lp: 900 });
+  };
+  // 观众口哨
+  const whistle = (t) => {
+    tone({ t, f0: 2100, f1: 2650, dur: 0.28, type: 'sine', vol: 0.028, dest: musicGain });
+  };
+  // 乙烯基炒豆声（随机爆点）
+  const crackle = (t) => {
+    if (Math.random() < 0.55) noise({ t, dur: 0.012, vol: rand2(0.008, 0.028), hp: 2600, dest: musicGain });
+  };
+  const rand2 = (a, b) => a + Math.random() * (b - a);
+  // 场馆人群底噪（持续氛围层）
+  let ambSrc = null, ambGain = null;
+  function startAmbience() {
+    if (TEST_CLOCK || ambSrc) return;
+    ambGain = ctx.createGain(); ambGain.gain.value = 0.0;
+    const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 750;
+    ambSrc = ctx.createBufferSource(); ambSrc.buffer = noiseBuf; ambSrc.loop = true;
+    ambSrc.connect(f); f.connect(ambGain); ambGain.connect(master);
+    ambGain.gain.setTargetAtTime(0.05, tnow(), 1.2);
+    ambSrc.start();
+  }
+  function stopAmbience() {
+    if (!ambSrc) return;
+    ambGain.gain.setTargetAtTime(0.0001, tnow(), 0.3);
+    const src = ambSrc; setTimeout(() => { try { src.stop(); } catch (e) {} }, 1200);
+    ambSrc = null;
+  }
 
   /* ---------- 步进调度 ---------- */
   function scheduleStep(idx, t) {
@@ -153,6 +199,22 @@ const AudioSys = (() => {
       if (st === 4 || st === 12) snare(t, 0.95);
       if (st % 2 === 0) hat(t, false, st % 4 === 2 ? 0.9 : 0.55);
       if (sec === 'chorus' && st % 4 === 2) hat(t, true, 0.7);
+    } else if (style === 'dust') {
+      // 尘与拳：粗粝 boom-bap——摇摆 kick、脏 snare、炒豆声、群众呐喊
+      const sw = (st % 2 === 1) ? STEP * 0.55 : 0;          // 16 分摇摆
+      const tt = t + sw;
+      const kicks = sec === 'chorus' ? [0, 7, 8, 10] : [0, 7, 8];
+      if (kicks.includes(st)) kick808(tt);
+      if (st === 4 || st === 12) { noise({ t: tt, dur: 0.13, vol: 0.24, hp: 900, lp: 6500 }); tone({ t: tt, f0: 190, f1: 140, dur: 0.09, type: 'triangle', vol: 0.15 }); }
+      if (st % 4 === 2) hat(tt, true, 0.75);
+      else if (st % 2 === 0) hat(tt, false, 0.5);
+      if (st === 0 || st === 8) sub808(tt, F(chord.r));
+      if (st === 11) sub808(tt, F(chord.r) * 1.5, 0.7);
+      if (sec === 'chorus' && (st === 0 || st === 8)) stab(t, chord.pad.map(n => n * 2), 0.8);
+      if (sec === 'verse' && st === 6) stab(t, [chord.pad[1] * 2], 0.6);
+      crackle(t);                                            // 乙烯基炒豆
+      if (st === 0 && (sec === 'chorus' || sec === 'verse') && bar % 2 === 0) chant(t + STEP * 2, 1);
+      if (st === 10 && bar % 4 === 3) whistle(t);
     } else if (style === 'rush') {
       if (st % 4 === 0) kick(t);
       if (sec === 'chorus' && (st === 10)) kick(t, 0.7);
@@ -198,7 +260,10 @@ const AudioSys = (() => {
     else if (sec === 'chorus') { seq = bank.chorus; li = (bar < 36 ? bar - 20 : bar - 36) % 4; }
     else                       { seq = bank.outro;  li = (bar - 44) % bank.outro.length; }
     const note = seq[li % seq.length][st];
-    if (note) lead(t, F(note), sec === 'chorus' ? 0.22 : 0.3, m.wave);
+    if (note) {
+      if (style === 'dust') brass(t, F(note), sec === 'chorus' ? 0.42 : 0.6);  // 沙哑小号主音
+      else lead(t, F(note), sec === 'chorus' ? 0.22 : 0.3, m.wave);
+    }
   }
 
   /* ---------- 歌曲控制 ---------- */
@@ -214,6 +279,7 @@ const AudioSys = (() => {
     playing = true;
     musicGain.gain.cancelScheduledValues(tnow());
     musicGain.gain.setTargetAtTime(0.4, tnow(), 0.05);
+    startAmbience();                                       // 场馆人群底噪
     if (songTimer) clearInterval(songTimer);
     songTimer = setInterval(() => {
       if (!playing) return;
@@ -229,6 +295,7 @@ const AudioSys = (() => {
     playing = false;
     if (songTimer) { clearInterval(songTimer); songTimer = null; }
     if (ctx) musicGain.gain.setTargetAtTime(0.0001, tnow(), 0.15);
+    stopAmbience();
   }
   const suspend = () => {
     if (TEST_CLOCK) { pausedAt = tnow(); return; }
