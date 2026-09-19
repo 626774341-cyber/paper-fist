@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>纸片拳王 PAPER FIST · BoxerDash v3</title>
+<link rel="stylesheet" href="css/style.css?v=3">
+</head>
+<body>
+<div id="stage">
+  <canvas id="game" width="1280" height="720"></canvas>
+
+  <!-- 标题 -->
+  <div class="screen on" id="screen-title">
+    <div class="poster">
+      <img src="assets/boxer.jpg" alt="纸片拳王" draggable="false">
+    </div>
+    <div class="title-block">
+      <div class="title-kicker">BOXERDASH v3 · 纸片骨骼节奏游戏</div>
+      <h1 class="title-main">纸片拳王<span class="title-en">PAPER FIST</span></h1>
+      <div class="title-sub">四路出拳 · 踩着节拍把沙袋打上天</div>
+      <button class="btn btn-big" id="btn-title-start">进入拳台 ▶</button>
+      <div class="title-help">
+        <span><b>U</b> 刺拳·高位</span><span><b>I</b> 直拳·高位</span><span><b>J</b> 勾拳·低位</span><span><b>K</b> 上勾·低位</span>
+        <span class="dim">上排打头 下排打肚子 · ESC 暂停 · M 静音 · 触屏分屏点按</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- 大厅 -->
+  <div class="screen" id="screen-lobby">
+    <div class="lobby">
+      <div class="lobby-head">
+        <h2>选择比赛 🥊</h2>
+        <span id="mute-chk">🔊 音效开 (M)</span>
+      </div>
+      <div class="lobby-songs" id="lobby-songs"></div>
+      <div class="lobby-bar">
+        <div class="diff-group">
+          <button class="diff-btn" data-d="easy">热身</button>
+          <button class="diff-btn sel" data-d="normal">挑战</button>
+          <button class="diff-btn" data-d="hard">冠军</button>
+        </div>
+        <div class="lobby-actions">
+          <button class="btn ghost" id="btn-back">返回</button>
+          <button class="btn btn-big" id="btn-fight">开打! FIGHT!</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 暂停 -->
+  <div class="screen" id="screen-pause">
+    <div class="panel">
+      <h2>暂停 · 调整呼吸</h2>
+      <button class="btn btn-big" id="btn-resume">继续比赛</button>
+      <button class="btn ghost" id="btn-quit">放弃本场</button>
+    </div>
+  </div>
+
+  <!-- 结算 -->
+  <div class="screen" id="screen-results">
+    <div class="panel results">
+      <h2 id="r-title">K.O. 胜利!</h2>
+      <div id="r-song" class="r-song"></div>
+      <div class="r-grid">
+        <div class="r-rank-box"><span id="r-new" class="badge new">NEW!</span><span id="r-fc" class="badge fc">FULL COMBO</span><div id="r-rank" class="r-rank">S</div></div>
+        <div class="r-stats">
+          <div class="r-score-line">SCORE <b id="r-score">0</b></div>
+          <div>最大连击 <b id="r-maxcombo">0</b></div>
+          <div>PERFECT <b id="r-perfect">0</b></div>
+          <div>GREAT <b id="r-great">0</b></div>
+          <div>GOOD <b id="r-good">0</b></div>
+          <div>MISS <b id="r-miss">0</b></div>
+          <div>精度 <b id="r-acc">0%</b></div>
+        </div>
+      </div>
+      <div class="lobby-actions">
+        <button class="btn" id="btn-retry">再打一场</button>
+        <button class="btn ghost" id="btn-lobby">回大厅</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* 顺序加载（no-store：改完即生效，天然免缓存）。
+   四个模块拼成一段执行，共享词法作用域（const 不会泄漏到全局）。 */
+(async () => {
+  window.__errors = window.__errors || [];
+  window.onerror = (m, s, l, c, e) => { window.__errors.push(String((e && e.stack) || m)); };
+  try {
+    const parts = [];
+    for (const f of ['chart', 'audio', 'rig', 'game'])
+      parts.push(await fetch(`js/${f}.js`, { cache: 'no-store' }).then(r => r.text())
+        .then(t => `/* ===== ${f}.js ===== */\n` + t));
+    (0, eval)(parts.join('\n') + '\n//# sourceURL=boxerdash.bundle.js');
+  } catch (e) { window.__errors.push(String(e)); }
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>Rig Tester · 纸片拳王</title>
+<style>
+  body { margin:0; background:#123; font: 13px system-ui; color:#fff; overflow:hidden; }
+  canvas { display:block; }
+  #bar { position:fixed; left:8px; top:8px; display:flex; gap:6px; flex-wrap:wrap; max-width:1280px; }
+  button { background:#284; color:#fff; border:1px solid #4a6; border-radius:6px; padding:6px 10px; cursor:pointer; font-size:13px; }
+  button:hover { background:#395; }
+  #info { position:fixed; left:8px; bottom:8px; color:#9fc; }
+</style>
+</head>
+<body>
+<canvas id="cv" width="1280" height="720"></canvas>
+<div id="bar">
+  <button data-a="jab">jab 刺拳</button>
+  <button data-a="cross">cross 直拳</button>
+  <button data-a="hook">hook 勾拳</button>
+  <button data-a="upper">upper 上勾</button>
+  <button data-a="dodge">dodge</button>
+  <button data-a="hurt">hurt</button>
+  <button data-a="victory">victory</button>
+  <button data-a="down">down</button>
+  <button data-a="reset">reset</button>
+  <input id="ph" type="range" min="0" max="100" value="0" title="beat phase">
+  <label>放大 <input id="sc" type="range" min="20" max="60" value="36"></label>
+  <label>X <input id="px" type="range" min="0" max="500" value="150"></label>
+</div>
+<div id="info">impact points will show as ✛</div>
+<script src="js/rig.js?v=2"></script>
+<script>
+window.__errors = [];
+window.onerror = (m, s, l, c, e) => { window.__errors.push(String((e && e.stack) || m)); };
+const cv = document.getElementById('cv'), ctx = cv.getContext('2d');
+let T0 = performance.now();
+const place = () => ({ x: +document.getElementById('px').value, y: 560, s: +document.getElementById('sc').value / 100 });
+const LANE_ACTS = ['jab', 'cross', 'hook', 'upper'];
+let impacts = null;
+
+Rig.load(() => { computeImpacts(); });
+
+function computeImpacts() {
+  impacts = {};
+  for (const a of LANE_ACTS) impacts[a] = Rig.impactPoint(a, place());
+  document.getElementById('info').textContent = JSON.stringify(impacts, (k, v) =>
+    typeof v === 'number' ? Math.round(v) : v);
+}
+document.querySelectorAll('button').forEach(b => b.onclick = () => {
+  const a = b.dataset.a;
+  if (a === 'reset') Rig.reset(); else Rig.act(a);
+  if (LANE_ACTS.includes(a)) computeImpacts();
+});
+document.getElementById('ph').oninput = e => Rig.setBeat(+e.target.value / 100, 0);
+
+function frame(now) {
+  try {
+    const t = (now - T0) / 1000, dt = 1 / 60;
+    if (!window.__freeze) Rig.update(dt);
+    ctx.fillStyle = '#4aa7b0'; ctx.fillRect(0, 0, 1280, 720);
+    // 地面参考线
+    ctx.strokeStyle = 'rgba(255,255,255,.25)'; ctx.beginPath();
+    ctx.moveTo(0, 700); ctx.lineTo(1280, 700); ctx.stroke();
+    Rig.setBeat((t * 2.2) % 1, 0);
+    Rig.draw(ctx, t, place());
+    // 画命中点
+    if (impacts) for (const a in impacts) {
+      const [x, y] = impacts[a];
+      ctx.strokeStyle = '#ff3'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(x - 14, y); ctx.lineTo(x + 14, y);
+      ctx.moveTo(x, y - 14); ctx.lineTo(x, y + 14); ctx.stroke();
+      ctx.fillStyle = '#ff3'; ctx.font = 'bold 14px monospace'; ctx.fillText(a, x + 16, y - 8);
+    }
+  } catch (e) { window.__errors.push(String((e && e.stack) || e)); }
+  setTimeout(frame, 12);   // setTimeout 驱动：隐藏标签页里 rAF 会被冻结
+}
+setTimeout(frame, 0);
+window.__rig = Rig;
+</script>
+</body>
+</html>
