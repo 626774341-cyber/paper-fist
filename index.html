@@ -3,13 +3,17 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
-<title>纸片拳王 PAPER FIST · BoxerDash v3.4</title>
+<title>纸片拳王 PAPER FIST · BoxerDash v3.6</title>
 <link rel="stylesheet" href="css/style.css?v=3">
 </head>
 <body>
 <div id="stage">
   <div id="rotate-hint">📱 建议横屏游玩，体验更佳</div>
   <canvas id="game" width="1280" height="720"></canvas>
+  <div id="touch-btns">
+    <button id="t-block" title="格挡">🛡<small>空格</small></button>
+    <button id="t-ulti" title="必杀">🔥<small>F</small></button>
+  </div>
 
   <!-- 标题 -->
   <div class="screen on" id="screen-title">
@@ -23,8 +27,9 @@
       <button class="btn btn-big" id="btn-title-start">进入拳台 ▶</button>
       <button class="ver-btn" id="btn-version"><span id="ver-label">v3.2 · 更新记录</span></button>
       <div class="title-help">
-        <span><b>U</b> 刺拳·高位</span><span><b>I</b> 直拳·高位</span><span><b>J</b> 勾拳·低位</span><span><b>K</b> 上勾·低位</span>
-        <span class="dim">上排打头 下排打肚子 · ESC 暂停 · M 静音 · 触屏分屏点按</span>
+        <span><b>A</b> 刺拳·头</span><span><b>S</b> 直拳·脸</span><span><b>G</b> 勾拳·腹</span><span><b>H</b> 上勾·腰</span>
+        <span><b>空格</b> 格挡</span><span><b>F</b> 必杀(槽满)</span>
+        <span class="dim">对手出重拳时按空格格挡 · ESC 暂停 · M 静音 · 触屏分屏点按</span>
       </div>
     </div>
   </div>
@@ -42,10 +47,6 @@
           <button class="diff-btn" data-d="easy">热身</button>
           <button class="diff-btn sel" data-d="normal">挑战</button>
           <button class="diff-btn" data-d="hard">冠军</button>
-        </div>
-        <div class="diff-group">
-          <button class="scheme-btn" data-s="grid">方位键 U I / J K</button>
-          <button class="scheme-btn" data-s="hands">左右手 F J / D K</button>
         </div>
         <div class="lobby-actions">
           <button class="btn ghost" id="btn-back">返回</button>

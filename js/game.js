@@ -17,8 +17,19 @@ const Game = (() => {
   const D2R = Math.PI / 180;
 
   /* ---------- 版本记录（每次更新：改 VERSION + VERSIONS + CHANGELOG.md） ---------- */
-  const VERSION = 'v3.4';
+  const VERSION = 'v3.6';
   const VERSIONS = [
+    { v: 'v3.6', date: '2026-09-19', title: '热血爆发', items: [
+      '新增 必杀系统：必杀槽攒满按 F 释放「BULLET FIST!!」——冲刺贴脸六连轰 + 终结上勾轰飞，演出期间无敌',
+      '改动 金拳套移除，必杀槽改为纯命中充能；槽满不再自动进入金手套，改为按 F 释放，必杀结束后进入金手套时间',
+      '改动 键位定稿 ASGH（A 刺 S 直 G 勾 H 上勾），格挡改到空格，F 专职必杀',
+    ]},
+    { v: 'v3.5', date: '2026-09-19', title: '攻防回合', items: [
+      '新增 格挡系统：对手会更频繁地出重拳，红色「！」预警后按 G 格挡',
+      '新增 格挡成功 +150 分并让对手踉跄；失手他会一拳全扣在你身上',
+      '改动 键位统一为 ASDF（A 刺 S 直 D 勾 F 上勾），判定圈按身体部位拉开',
+      '新增 回合大特效：每打倒一个对手，全屏砸出 ROUND 2 / 3 / 4…',
+    ]},
     { v: 'v3.4', date: '2026-09-19', title: '热血拳场', items: [
       '新增 新曲「尘与拳 DUST & FIST」：粗粝 boom-bap + 沙哑小号 + 群众呐喊（地下拳场氛围）',
       '新增 全场馆氛围层：人群底噪、口哨、乙烯基炒豆声',
@@ -67,8 +78,8 @@ const Game = (() => {
     counts: { PERFECT: 0, GREAT: 0, GOOD: 0, MISS: 0 },
     hp: 100, feverGauge: 0, feverT: 0,
     hitstop: 0, shakeT: 0, shakeMag: 0, flashA: 0, slowmo: 0,
-    roundCard: null, ready: 0,
-    notes: [], gloves: [], holds: [],
+    roundSplash: null, ready: 0, hurtA: 0,
+    notes: [], holds: [],
     koT: -1, ended: false, fc: true, endResult: null,
     auto: AUTO,
   };
@@ -125,6 +136,7 @@ const Game = (() => {
       if (this.hp <= 0) {           // 击倒对手，下一回合换更硬的
         this.ko = true; this.respawnT = 1.6; this.stagger = 0;
         this.knockV = Math.min(1400, this.knockV + 650);   // 倒地时被轰飞
+        S.roundSplash = { round: this.gen + 1, t: 0 };     // 下一回合大特效
         S.score += 1000 * this.gen;
         comicWord(this.x + 90 + this.knock, this.y - 180, false);
         burst(this.x + 100 + this.knock, this.y - 260, 36, 1.5, palette().accent);
@@ -135,18 +147,13 @@ const Game = (() => {
     },
   };
 
-  /* ---------- 车道（拳法 ID 与谱面对应；键位随方案动态映射） ---------- */
+  /* ---------- 车道（ASDF 单一方案；判定圈按对手身体部位分布） ---------- */
   const LANES = [
-    { id: 'jab',   act: 'jab',   hand: 'L', name: '刺拳·高位', mult: 1.0,  key: '', label: '', x: 0, y: 0 },
-    { id: 'cross', act: 'cross', hand: 'R', name: '直拳·高位', mult: 1.2,  key: '', label: '', x: 0, y: 0 },
-    { id: 'hook',  act: 'hook',  hand: 'L', name: '勾拳·低位', mult: 1.45, key: '', label: '', x: 0, y: 0 },
-    { id: 'upper', act: 'upper', hand: 'R', name: '上勾·低位', mult: 1.6,  key: '', label: '', x: 0, y: 0 },
+    { id: 'jab',   act: 'jab',   hand: 'L', key: 'A', label: 'A', name: '刺拳·打头', mult: 1.0,  y: 205 },
+    { id: 'cross', act: 'cross', hand: 'R', key: 'S', label: 'S', name: '直拳·打脸', mult: 1.2,  y: 265 },
+    { id: 'hook',  act: 'hook',  hand: 'L', key: 'G', label: 'G', name: '勾拳·打腹', mult: 1.45, y: 330 },
+    { id: 'upper', act: 'upper', hand: 'R', key: 'H', label: 'H', name: '上勾·打腰', mult: 1.6,  y: 395 },
   ];
-  /* 键位方案：grid = 2×2 方位（上排高位下排低位）；hands = 左右手分列 */
-  const SCHEMES = {
-    grid:  { label: '方位键 U I / J K', map: { jab: 'U', cross: 'I', hook: 'J', upper: 'K' } },
-    hands: { label: '左右手 F J / D K', map: { jab: 'F', cross: 'J', hook: 'D', upper: 'K' } },
-  };
   const PLACE = { x: 250, y: 570, s: 0.36 };
   const FOE_PLACE = { x: 790, y: 570, s: 0.36 };
   const FoeRig = createRig({
@@ -155,12 +162,8 @@ const Game = (() => {
   });   // 蓝方对手（镜像）
   const FOE_FACE = 585;   // 判定圈所在（对手脸/躯干前缘）
   function computeLanes() {
-    for (const L of LANES) {
-      const p = Rig.impactPoint(L.act, PLACE);
-      L.y = p[1];
-      L.x = FOE_FACE;        // 所有判定圈都压在对手身上
-    }
-    LANES.forEach((L) => L.railY = L.y);
+    // 判定圈按对手身体部位上下拉开：头 205 / 脸 265 / 腹 330 / 腰 395
+    LANES.forEach((L, i) => { L.y = L.y = [205, 265, 330, 395][i]; L.x = FOE_FACE; L.railY = L.y; });
   }
 
   /* ---------- 判定 ---------- */
@@ -181,17 +184,6 @@ const Game = (() => {
             : Math.abs(bestDt) <= WINDOWS.GREAT ? 'GREAT' : 'GOOD';
     best.done = true; best.hitAt = S.t;
     landPunch(L, q, best.beat);
-    // 顺带吃掉同车道附近的金拳套
-    for (const g of S.gloves) {
-      if (!g.done && g.lane === L.id && Math.abs(g.beat - now) < 0.3) {
-        g.done = true;
-        S.score += 500;
-        S.feverGauge = clamp(S.feverGauge + 6, 0, 100);
-        AudioSys.sfxGlove();
-        burst(g.x, g.y, 14, 1, '#f2b632');
-        comicWord(g.x, g.y - 30, false);
-      }
-    }
   }
 
   function landPunch(L, q, beat) {
@@ -246,10 +238,12 @@ const Game = (() => {
     const dmgScale = S.diff === 'easy' ? 0.6 : S.diff === 'hard' ? 1.25 : 1;
     S.hp = clamp(S.hp - (n.kind === 'hold' ? 12 : 8) * dmgScale, 0, 100);
     S.feverGauge = clamp(S.feverGauge - 4, 0, 100);
-    AudioSys.sfxMiss();
-    Rig.act('hurt');
-    S.shakeT = 0.18; S.shakeMag = 5;
-    if (S.hp <= 0 && !S.ended) knockdown();
+    if (!S.ulti) {
+      AudioSys.sfxMiss();
+      Rig.act('hurt');
+      S.shakeT = 0.18; S.shakeMag = 5;
+      if (S.hp <= 0 && !S.ended) knockdown();
+    }
   }
 
   function crowdCheer() {
@@ -310,17 +304,10 @@ const Game = (() => {
     }
   }
 
-  /* ---------- 输入（键位随方案动态映射；方向键=轨道顺序） ---------- */
+  /* ---------- 输入（ASGH 四拳；F 必杀；空格格挡） ---------- */
   const inputDown = {};
-  let KEYMAP = {};
-  function applyScheme() {
-    const s = SCHEMES[save.scheme] || SCHEMES.grid;
-    for (const L of LANES) { L.key = s.map[L.id]; L.label = L.key; }
-    KEYMAP = {};
-    for (const L of LANES) KEYMAP[L.key.toLowerCase()] = L.key;
-    KEYMAP.arrowup = LANES[0].key; KEYMAP.arrowright = LANES[1].key;
-    KEYMAP.arrowdown = LANES[2].key; KEYMAP.arrowleft = LANES[3].key;
-  }
+  const KEYMAP = { a: 'A', s: 'S', g: 'G', h: 'H',
+    arrowup: 'A', arrowright: 'S', arrowdown: 'G', arrowleft: 'H' };
   function pressLane(key) {
     if (S.scene !== 'play' || S.koT >= 0) return;
     inputDown[key] = true;
@@ -335,9 +322,47 @@ const Game = (() => {
     else judgeHit(L);
   }
   function releaseLane(key) { inputDown[key] = false; }
+
+  /* ---------- 格挡系统：对手出重拳时按 G 格挡，失败挨一记重拳 ---------- */
+  let foeAtk = null;          // { tele, hit } 预警拍 / 挥拳拍（节拍数）
+  let lastAtkBar = -1;
+  function tryBlock() {
+    if (S.scene !== 'play' || !foeAtk) return;
+    const spb = S.chart.spb;
+    const dtSec = Math.abs(foeAtk.hit - songBeat()) * spb;
+    if (dtSec < 0.42) {
+      foeAtk = null;
+      window.__foeAtkNow = false; window.__lastBlock = true;
+      S.score += 150 * (S.feverT > 0 ? 2 : 1);
+      foe.stagger = Math.max(foe.stagger, 0.5);      // 对手被格挡踉跄
+      FoeRig.act('hurt');
+      burst(505, 285, 12, 1.0, '#f2b632');
+      ring(505, 285);
+      comicWord(505, 200, false, '格挡!');
+      AudioSys.sfxBlock();
+      S.hitstop = Math.max(S.hitstop, 0.04);
+      S.shakeT = 0.15; S.shakeMag = 5;
+    }
+    // 时机不对：无效按键（不惩罚，仅空挥）
+  }
+  function foeSwingLands() {
+    foeAtk = null; window.__foeAtkNow = false;
+    if (S.ulti) return;                              // 必杀演出期间无敌
+    S.combo = 0; S.fc = false;
+    S.hp = clamp(S.hp - 14 * (S.diff === 'easy' ? 0.6 : S.diff === 'hard' ? 1.25 : 1), 0, 100);
+    Rig.act('hurt');
+    AudioSys.sfxHurt();
+    S.shakeT = 0.26; S.shakeMag = 9;
+    S.hurtA = 0.55;
+    comicWord(430, 260, false, '挨打!');
+    burst(470, 290, 10, 0.9, '#e05548');
+    if (S.hp <= 0 && !S.ended) knockdown();
+  }
   window.addEventListener('keydown', e => {
     const k = e.key.toLowerCase();
     if (S.scene === 'play' && KEYMAP[k] && !e.repeat) { pressLane(KEYMAP[k]); e.preventDefault(); }
+    else if (k === ' ' && S.scene === 'play') { tryBlock(); e.preventDefault(); }
+    else if (k === 'f' && S.scene === 'play') { tryUlti(); e.preventDefault(); }
     else if ((k === 'escape' || k === 'p') && (S.scene === 'play' || S.scene === 'pause')) togglePause();
     else if (S.scene === 'title' && k) toLobby();
     else if (k === 'm') { save.muted = !save.muted; AudioSys.setMuted(save.muted); persist(); }
@@ -360,6 +385,64 @@ const Game = (() => {
     for (const L of LANES) releaseLane(L.key);
   });
 
+  /* ---------- 必杀：BULLET FIST（槽满按 F，演出期间无敌） ---------- */
+  function tryUlti() {
+    if (S.scene !== 'play' || S.ulti || S.feverGauge < 100 || foe.ko) return;
+    S.ulti = { t: 0, dur: 2.4, fired: {}, finisher: false };
+    S.feverGauge = 0;
+    foeAtk = null; lastAtkBar = -1;
+    S.flashA = 0.32; S.hitstop = 0.12; S.slowmo = Math.max(S.slowmo, 0.45);
+    comicWord(FOE_PLACE.x + 140, FOE_PLACE.y - 360, true, 'BULLET FIST!!');
+    AudioSys.sfxFever(); AudioSys.sfxBell(1);
+    crowdCheer();
+  }
+  function updateUlti(rawDt) {
+    const u = S.ulti; if (!u) return;
+    u.t += rawDt;
+    const beat = songBeat();
+    // 六连轰击时间轴
+    const sched = [0.3, 0.55, 0.8, 1.05, 1.3, 1.55];
+    sched.forEach((st0, i) => {
+      if (!u.fired[i] && u.t >= st0) {
+        u.fired[i] = true;
+        Rig.act(i % 2 ? 'cross' : 'hook');
+        Rig.flash(i % 2 ? 'R' : 'L');
+        AudioSys.sfxHit('PERFECT', true);
+        foe.hit(70 + i * 18);
+        burst(FOE_PLACE.x + foe.knock + 90, FOE_PLACE.y - 300 + i * 28, 12, 1.1, '#f2b632');
+        S.hitstop = Math.max(S.hitstop, 0.03);
+        S.shakeT = 0.2; S.shakeMag = 8;
+      }
+    });
+    // 终结上勾：大击退 + 慢镜头
+    if (!u.finisher && u.t >= 1.95) {
+      u.finisher = true;
+      Rig.act('upper'); Rig.flash('R');
+      foe.hit(200);
+      foe.knockV = Math.min(1500, foe.knockV + 1000);
+      comicWord(FOE_PLACE.x + foe.knock + 110, FOE_PLACE.y - 330, true);
+      S.slowmo = Math.max(S.slowmo, 0.8);
+      S.flashA = 0.3;
+      AudioSys.sfxKO();
+    }
+    // 结束：进入金手套时间
+    if (u.t >= u.dur) {
+      S.ulti = null;
+      S.feverT = 9;
+      AudioSys.sfxFever();
+      crowdCheer();
+    }
+    // 必杀期间自动清掉身边的音符（拳雨覆盖）
+    for (const n of S.notes) {
+      if (n.done || n.missed) continue;
+      const L = LANES.find(l => l.id === n.lane);
+      if (Math.abs(n.beat - beat) < 0.35) {
+        n.done = true;
+        S.counts.PERFECT++; S.combo++; S.maxCombo = Math.max(S.maxCombo, S.combo);
+        S.score += 300;
+      }
+    }
+  }
   /* ---------- 节拍时间 ---------- */
   const spb = () => S.chart.spb;
   const songBeat = () => AudioSys.songTime() / spb();
@@ -390,7 +473,7 @@ const Game = (() => {
     S.counts = { PERFECT: 0, GREAT: 0, GOOD: 0, MISS: 0 };
     S.hp = 100; S.feverGauge = 0; S.feverT = 0;
     S.koT = -1; S.ended = false; S.fc = true; S.endResult = null;
-    S.ready = 1.2; S.roundCard = null;
+    S.ready = 1.2; S.roundSplash = { round: 1, t: -1.35 }; S.hurtA = 0;
     particles.length = words.length = rings.length = dmgNums.length = crowdFlash.length = 0;
     foe.reset();
     Rig.reset();
@@ -401,7 +484,6 @@ const Game = (() => {
       beat: e.beat, lane: e.lane, kind: e.kind, dur: e.dur || 0,
       done: false, missed: false, holding: false, x: 0, y: 0, hitAt: 0, ticks: 0,
     }));
-    S.gloves = S.chart.gloves.map(g => ({ ...g, done: false, x: 0, y: 0, spin: rand(0, 360) }));
     show(null);
     S.scene = 'play';
     S.playing = true;
@@ -492,23 +574,9 @@ const Game = (() => {
     // ready 倒计时
     if (S.ready > 0) S.ready -= dt;
 
-    // fever
+    // fever：必杀槽满后按 F 释放（F 键处理在 keydown）
     if (S.feverT > 0) S.feverT -= dt;
-    if (S.feverGauge >= 100 && S.feverT <= 0) {
-      S.feverT = 9; S.feverGauge = 0;
-      AudioSys.sfxFever();
-      comicWord(640, 300, false);
-      crowdCheer();
-    }
-
-    // 回合卡
-    const bar = Math.floor(beat / 4);
-    const round = Chart.roundAt(clamp(bar, 0, Chart.BARS - 1));
-    if (!S.roundCard || S.roundCard.round !== round) {
-      S.roundCard = { round, t: 0 };
-      if (bar > 2) { /* 开场 READY 优先 */ }
-    }
-    if (S.roundCard) S.roundCard.t += dt;
+    if (S.ulti) updateUlti(rawDt);
 
     // 自动演奏（演示/测试）
     if (S.auto) {
@@ -518,13 +586,6 @@ const Game = (() => {
           n.done = true;
           const L = LANES.find(l => l.id === n.lane);
           landPunch(L, 'PERFECT', n.beat);
-        }
-      }
-      for (const g of S.gloves) {
-        if (!g.done && Math.abs(g.beat - beat) < 0.06) {
-          g.done = true;
-          const L = LANES.find(l => l.id === g.lane);
-          S.score += 500; AudioSys.sfxGlove(); burst(L.x, L.y, 14, 1, '#f2b632');
         }
       }
     }
@@ -556,13 +617,6 @@ const Game = (() => {
         // 命中后向左飞散消失
         n.hitAt += dt;
       }
-    }
-    for (const g of S.gloves) {
-      const L = LANES.find(l => l.id === g.lane);
-      g.x = L.x + (g.beat - beat) * spb() * sp;
-      g.y = L.railY - 46;
-      g.spin += dt * 160;
-      if (!g.done && g.x < L.x - 100) { g.done = true; g.missed = true; S.combo = 0; S.fc = false; }
     }
 
     // 对手：击退滑行物理 / 受击表现 / 破防倒计时 / 挑衅还拳 / K.O. 后换人
@@ -602,9 +656,33 @@ const Game = (() => {
         foe.maxHp = Math.round(foe.maxHp * 1.2);
         foe.hp = foe.maxHp;
         foe.ko = false; foe.dent = 0;
-        FoeRig.reset();
+        FoeRig.reset(); foeAtk = null;
       }
     }
+
+    // 敌方重拳：每 4 拍判定一次，55% 出拳（预警 1 拍，按 G 格挡）
+    if (!foeAtk && !S.ulti && beat > 16 && !foe.ko && foe.stagger <= 0 && (beat % 4) < 0.1) {
+      const atkBar = Math.floor(beat / 4);
+      if (lastAtkBar !== atkBar && Math.random() < 0.55) {
+        lastAtkBar = atkBar;
+        foeAtk = { tele: beat, hit: beat + 1 };
+        window.__foeAtkNow = true; window.__foeAtkSeen = true;
+        AudioSys.sfxWarn();
+      }
+    }
+    // 对手挥拳动作（挥到瞬间）
+    if (foeAtk && !foeAtk.swung && beat > foeAtk.hit - 0.05) {
+      foeAtk.swung = true;
+      FoeRig.act(pick(['cross', 'hook']));
+      AudioSys.sfxSwing();
+    }
+    // 挥拳落地：未格挡则结结实实挨一记
+    if (foeAtk && beat > foeAtk.hit + 0.4) {
+      foeSwingLands();
+    }
+
+    // 回合大特效计时
+    if (S.roundSplash) S.roundSplash.t += dt;
 
     // 结束判定
     if (beat > S.chart.totalBeats + 1 && !S.ended) finishWin();
@@ -642,6 +720,7 @@ const Game = (() => {
       crowdFlash[i].t += dt;
       if (crowdFlash[i].t > crowdFlash[i].dur) crowdFlash.splice(i, 1);
     }
+    S.hurtA = Math.max(0, (S.hurtA || 0) - dt * 1.8);
   }
 
   /* ============================================================
@@ -679,7 +758,6 @@ const Game = (() => {
     if (S.scene === 'play' || S.scene === 'pause' || (S.scene === 'results' && S.song)) {
       drawStage(pal);
       drawLanes();
-      drawGloves();
       drawFoe();
       drawNotes();
       drawBoxer();
@@ -695,6 +773,18 @@ const Game = (() => {
     if (S.flashA > 0) {
       ctx.fillStyle = `rgba(255,255,255,${S.flashA})`;
       ctx.fillRect(0, 0, W, H);
+    }
+    if (S.hurtA > 0) {
+      const hg = ctx.createRadialGradient(W / 2, H / 2, H * 0.3, W / 2, H / 2, H * 0.9);
+      hg.addColorStop(0, 'rgba(180,20,20,0)');
+      hg.addColorStop(1, `rgba(190,25,20,${Math.min(0.55, S.hurtA)})`);
+      ctx.fillStyle = hg; ctx.fillRect(0, 0, W, H);
+    }
+    if (S.ulti) {
+      const ug = ctx.createLinearGradient(0, 0, 0, H);
+      ug.addColorStop(0, 'rgba(242,182,50,0.22)');
+      ug.addColorStop(1, 'rgba(224,85,72,0.10)');
+      ctx.fillStyle = ug; ctx.fillRect(0, 0, W, H);
     }
     if (S.feverT > 0) {
       ctx.fillStyle = `rgba(242,182,50,${0.08 + 0.03 * Math.sin(S.t * 10)})`;
@@ -944,22 +1034,6 @@ const Game = (() => {
       }
     }
   }
-  function drawGloves() {
-    for (const g of S.gloves) {
-      if (g.done) continue;
-      if (g.x < -40 || g.x > W + 60) continue;
-      ctx.save();
-      ctx.translate(g.x, g.y);
-      ctx.rotate(g.spin * D2R);
-      ctx.fillStyle = '#f2b632';
-      star(ctx, 0, 0, 5, 22, 9);
-      ctx.fillStyle = '#12333c';
-      ctx.font = '900 13px system-ui';
-      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText('🥊', 0, 1);
-      ctx.restore();
-    }
-  }
 
   /* ---------- 对手拳手 ---------- */
   function drawFoe() {
@@ -991,6 +1065,28 @@ const Game = (() => {
       ctx.globalAlpha = 0.5 + 0.5 * Math.sin(S.t * 8);
       star(ctx, fx + 120, 175 + Math.sin(S.t * 3) * 5, 5, 10, 4, '#f4ead6');
       star(ctx, fx + 210, 160 + Math.cos(S.t * 2.6) * 4, 5, 7, 3, '#f4ead6');
+      ctx.restore();
+      ctx.globalAlpha = 1;
+    }
+    // 出重拳预警：头顶红「！」+ 拳套红光渐强
+    if (foeAtk && !S.ulti && !foe.ko) {
+      const dtb = foeAtk.hit - songBeat();
+      const urgent = clamp(1 - dtb / 1.0, 0, 1);
+      const px = FOE_PLACE.x + foe.knock + 60;
+      ctx.save();
+      ctx.globalAlpha = 0.55 + 0.45 * Math.sin(S.t * (6 + urgent * 14));
+      ctx.fillStyle = '#e04030';
+      ctx.beginPath(); ctx.arc(px, 168, 16 + urgent * 5, 0, 7); ctx.fill();
+      ctx.fillStyle = '#fff';
+      ctx.font = '900 22px "Arial Black", system-ui';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('!', px, 169);
+      ctx.restore();
+      // 拳套红光
+      ctx.save();
+      ctx.globalAlpha = 0.25 + urgent * 0.35;
+      ctx.fillStyle = '#e04030';
+      ctx.beginPath(); ctx.arc(px - 60, 262, 40 + urgent * 10, 0, 7); ctx.fill();
       ctx.restore();
       ctx.globalAlpha = 1;
     }
@@ -1150,7 +1246,8 @@ const Game = (() => {
     ctx.textAlign = 'left'; ctx.textBaseline = 'top';
     ctx.font = '900 12px system-ui';
     ctx.fillStyle = 'rgba(244,234,214,0.9)';
-    ctx.fillText(S.feverT > 0 ? '🔥 金手套时间!' : '金手套槽', 26, 78);
+    const ultiReady = S.feverGauge >= 100 && S.feverT <= 0;
+    ctx.fillText(S.feverT > 0 ? '🔥 金手套时间!' : ultiReady ? '必杀就绪! 按 F 释放!' : '必杀槽 (F)', 26, 78);
     ctx.fillStyle = 'rgba(10,30,36,0.7)';
     ctx.fillRect(24, 94, 210, 13);
     ctx.fillStyle = '#f2b632';
@@ -1175,20 +1272,51 @@ const Game = (() => {
     ctx.fillRect(26, 44, 306, 6);
     ctx.fillStyle = palette().accent;
     ctx.fillRect(26, 44, 306 * clamp(beat / S.chart.totalBeats, 0, 1), 6);
-    // 回合卡
-    if (S.roundCard && S.roundCard.t < 1.6 && S.ready <= 0) {
-      const k = S.roundCard.t;
+    // 回合大特效：全屏砸出 ROUND N
+    if (S.roundSplash && S.roundSplash.t > 0 && S.roundSplash.t < 1.9) {
+      const k = S.roundSplash.t;
+      const slamIn = clamp(k / 0.22, 0, 1);
+      const scale = 2.8 - 1.8 * (1 - Math.pow(1 - slamIn, 4));   // outQuart 砸下
+      const fade = clamp(1.55 - k, 0, 1);
       ctx.save();
-      ctx.globalAlpha = clamp(1.4 - k, 0, 1);
-      ctx.translate(W / 2, 120 - k * 16);
-      ctx.rotate(-0.02);
-      ctx.textAlign = 'center';
-      ctx.font = '900 54px "Arial Black", system-ui';
-      ctx.lineWidth = 10; ctx.strokeStyle = '#12333c';
-      const label = S.roundCard.round === 3 ? 'FINAL ROUND' : 'ROUND ' + S.roundCard.round;
+      // 全屏暗幕 + 冲击线
+      ctx.fillStyle = `rgba(10,25,30,${0.5 * fade})`;
+      ctx.fillRect(0, 0, W, H);
+      ctx.strokeStyle = `rgba(244,234,214,${0.5 * fade})`;
+      ctx.lineWidth = 3;
+      for (let i2 = 0; i2 < 10; i2++) {
+        const yy = 80 + i2 * 62, off = (i2 % 2 ? 1 : -1) * (1 - slamIn) * 300;
+        ctx.beginPath(); ctx.moveTo(-off, yy); ctx.lineTo(W + off, yy); ctx.stroke();
+      }
+      ctx.translate(W / 2, H / 2 - 20);
+      ctx.rotate(-0.03 + Math.sin(k * 20) * 0.008 * (1 - slamIn));
+      ctx.scale(scale, scale);
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.font = '900 120px "Arial Black", system-ui';
+      ctx.lineWidth = 18; ctx.strokeStyle = '#12333c';
+      const label = 'ROUND ' + S.roundSplash.round;
+      ctx.globalAlpha = fade;
       ctx.strokeText(label, 0, 0);
       ctx.fillStyle = '#f2b632';
       ctx.fillText(label, 0, 0);
+      ctx.restore();
+      ctx.globalAlpha = 1;
+    }
+    // 格挡提示：对手出重拳时提示按空格
+    if (foeAtk && !S.ulti) {
+      const dtb = foeAtk.hit - songBeat();
+      const urgent = clamp(1 - dtb / 1.0, 0, 1);
+      const a = 0.65 + 0.35 * Math.sin(S.t * (10 + urgent * 12));
+      ctx.save();
+      ctx.globalAlpha = clamp(a, 0, 1);
+      ctx.translate(W / 2, 620);
+      ctx.fillStyle = urgent ? 'rgba(190,40,30,0.92)' : 'rgba(10,30,36,0.8)';
+      ctx.strokeStyle = 'rgba(244,234,214,0.9)'; ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.roundRect(-110, -22, 220, 44, 8); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = '#f4ead6';
+      ctx.font = '900 19px "Arial Black", system-ui';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('🛡 空格 格挡!', 0, 1);
       ctx.restore();
       ctx.globalAlpha = 1;
     }
@@ -1235,13 +1363,6 @@ const Game = (() => {
       b.classList.toggle('sel', b.dataset.d === lobbyDiff);
       b.onclick = () => { lobbyDiff = b.dataset.d; AudioSys.sfxUI(); renderLobby(); };
     });
-    document.querySelectorAll('.scheme-btn').forEach(b => {
-      b.classList.toggle('sel', b.dataset.s === save.scheme);
-      b.onclick = () => {
-        save.scheme = b.dataset.s; persist();
-        applyScheme(); AudioSys.sfxUI(); renderLobby();
-      };
-    });
     $('btn-fight').onclick = () => startSong(Chart.SONGS[lobbySong], lobbyDiff);
     $('btn-back').onclick = toTitle;
     $('mute-chk').textContent = save.muted ? '🔇 已静音 (M)' : '🔊 音效开 (M)';
@@ -1281,7 +1402,6 @@ const Game = (() => {
     };
     window.addEventListener('resize', fit); fit();
     makeGrain();
-    applyScheme();
     AudioSys.setMuted(save.muted);
     document.title = `纸片拳王 PAPER FIST · BoxerDash ${VERSION}`;
     $('ver-label').textContent = VERSION + ' · 更新记录';
@@ -1291,6 +1411,8 @@ const Game = (() => {
     $('btn-resume').onclick = togglePause;
     $('btn-quit').onclick = () => { AudioSys.resume(); AudioSys.stopSong(); S.scene = 'lobby'; show('screen-lobby'); renderLobby(); };
     $('btn-retry').onclick = () => startSong(S.song, S.diff);
+    $('t-block').onclick = () => { if (S.scene === 'play') tryBlock(); };
+    $('t-ulti').onclick = () => { if (S.scene === 'play') tryUlti(); };
     $('btn-lobby').onclick = () => { S.scene = 'lobby'; show('screen-lobby'); renderLobby(); };
     Rig.load(() => { computeLanes(); });
     FoeRig.load();
@@ -1311,7 +1433,7 @@ const Game = (() => {
     },
     state: S, rig: Rig, foeRig: FoeRig, foe,
     start: (songId, diff) => startSong(Chart.getSong(songId), diff || 'normal'),
-    toLobby, setScheme: s => { save.scheme = s; persist(); applyScheme(); },
+    toLobby,
   };
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);

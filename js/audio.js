@@ -357,11 +357,20 @@ const AudioSys = (() => {
     for (let i = 0; i < n; i++) bell(t + i * 0.42, 0.9); };
   const sfxUI = () => { ensure(); tone({ t: tnow(), f0: 880, dur: 0.05, type: 'sine', vol: 0.07, dest: sfxGain }); };
   const sfxMiss = () => { ensure(); noise({ t: tnow(), dur: 0.1, vol: 0.08, hp: 500, lp: 1600, dest: sfxGain }); };
+  // 格挡成功：金属铿声
+  const sfxBlock = () => { ensure(); const t = tnow();
+    tone({ t, f0: 1650, f1: 880, dur: 0.12, type: 'square', vol: 0.12, dest: sfxGain });
+    noise({ t, dur: 0.05, vol: 0.12, hp: 3000, dest: sfxGain });
+    tone({ t, f0: 260, f1: 180, dur: 0.1, type: 'sine', vol: 0.2, dest: sfxGain }); };
+  // 对手预警蜂鸣（两声急促）
+  const sfxWarn = () => { ensure(); const t = tnow();
+    tone({ t, f0: 620, dur: 0.07, type: 'square', vol: 0.09, dest: sfxGain });
+    tone({ t: t + 0.09, f0: 620, dur: 0.07, type: 'square', vol: 0.09, dest: sfxGain }); };
 
   return {
     ensure, resumeCtx, songTime, beatNow,
     startSong, stopSong, suspend, resume, setMuted, bpmOf,
     sfxSwing, sfxHit, sfxCombo, sfxGlove, sfxHurt, sfxFever, sfxKO, sfxWin, sfxFail,
-    sfxBell, sfxUI, sfxMiss,
+    sfxBell, sfxUI, sfxMiss, sfxBlock, sfxWarn,
   };
 })();

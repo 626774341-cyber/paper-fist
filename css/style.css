@@ -183,3 +183,14 @@ body {
 @media (orientation: portrait) and (max-width: 920px) {
   #rotate-hint { display: flex; }
 }
+
+/* ---------- 触屏格挡/必杀按钮 ---------- */
+#touch-btns { position: absolute; left: 12px; bottom: 12px; display: flex; gap: 10px; z-index: 5; }
+#touch-btns button {
+  width: 58px; height: 58px; border-radius: 50%;
+  border: 3px solid #f4ead6; background: rgba(10,30,36,.65); color: #f4ead6;
+  font-size: 22px; cursor: pointer; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; line-height: 1;
+}
+#touch-btns small { font-size: 9px; margin-top: 2px; }
+#touch-btns button:active { transform: scale(0.92); }

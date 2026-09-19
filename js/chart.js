@@ -280,24 +280,11 @@ const Chart = (() => {
       clean.push(e);
     }
 
-    const gloves = [];
-    for (let bar = 4; bar < BARS; bar++) {
-      for (const off of [1.5, 2.5, 3.5]) {
-        if (Math.random() > d.gloveChance) continue;
-        const beat = bar * 4 + off;
-        const lane = ['jab', 'cross', 'hook', 'upper'][Math.floor(Math.random() * 4)];
-        const conflict = clean.some(e =>
-          Math.abs(e.beat - beat) < 0.3 ||
-          (e.kind === 'hold' && e.lane === lane && beat > e.beat - 0.3 && beat < e.beat + e.dur + 0.3));
-        if (!conflict) gloves.push({ beat, lane });
-      }
-    }
-
     let lastTime = 0;
     for (const e of clean) lastTime = Math.max(lastTime, e.beat * beat);
 
     return {
-      events: clean, gloves, totalBeats: BARS * 4, lastTime,
+      events: clean, totalBeats: BARS * 4, lastTime,
       speed, spb: beat, bars: BARS,
     };
   }
